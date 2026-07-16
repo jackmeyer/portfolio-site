@@ -1,0 +1,160 @@
+---
+import 'xp.css';
+import '../styles/desktop.css';
+import { db } from '../lib/db';
+import { SITE_TITLE } from '../lib/site';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title = SITE_TITLE, description } = Astro.props;
+
+type Link = { id: number; label: string; icon_filename: string | null; kind: string; url: string };
+const links = db
+  .prepare('SELECT id, label, icon_filename, kind, url FROM links WHERE visible = 1 ORDER BY sort_order, id')
+  .all() as Link[];
+const iconSrc = (l: Link) => (l.icon_filename ? `/uploads/${l.icon_filename}` : '/favicon.svg');
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    <slot name="head" />
+  </head>
+  <body data-site-title={SITE_TITLE}>
+    <main class="desktop">
+      <div class="icons">
+        {links.map((l) =>
+          l.kind === 'external' ? (
+            <a class="icon external" href={l.url} target="_blank" rel="noopener">
+              <span class="icon-img"><img src={iconSrc(l)} alt="" width="48" height="48" /></span>
+              <span>{l.label}</span>
+            </a>
+          ) : (
+            <button class="icon" data-open={`window-${l.id}`}>
+              <span class="icon-img"><img src={iconSrc(l)} alt="" width="48" height="48" /></span>
+              <span>{l.label}</span>
+            </button>
+          )
+        )}
+      </div>
+
+      {links
+        .filter((l) => l.kind === 'window')
+        .map((l) => (
+          <div class="window pdf-window" id={`window-${l.id}`} role="dialog" aria-label={l.label} hidden>
+            <div class="title-bar">
+              <div class="title-bar-text">{l.label}</div>
+              <div class="title-bar-controls">
+                <button aria-label="Close" data-close />
+              </div>
+            </div>
+            <iframe data-src={l.url} title={l.label}></iframe>
+          </div>
+        ))}
+
+      <slot />
+    </main>
+    <footer class="taskbar">
+      <button class="start-button">About</button>
+    </footer>
+
+    <script>
+      document.querySelectorAll<HTMLElement>('[data-open]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const win = document.getElementById(btn.dataset.open!)!;
+          const frame = win.querySelector('iframe')!;
+          if (!frame.src) frame.src = frame.dataset.src!; // load the PDF on first open only
+          win.hidden = false;
+        });
+      });
+      document.querySelectorAll<HTMLElement>('[data-close]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          btn.closest<HTMLElement>('.window')!.hidden = true;
+        });
+      });
+
+      // drag (title bar, delegated from the window so content swaps survive)
+      // + click-to-front; resize is native CSS `resize: both`
+      let z = 10;
+      document.querySelectorAll<HTMLElement>('.desktop .window').forEach((win) => {
+        win.addEventListener('pointerdown', (e) => {
+          win.style.zIndex = String(++z);
+          const target = e.target as HTMLElement;
+          if (!target.closest('.title-bar') || target.closest('button, a')) return;
+          const rect = win.getBoundingClientRect();
+          // switch from centered transform to px coordinates so deltas apply cleanly
+          win.style.transform = 'none';
+          win.style.left = `${rect.left}px`;
+          win.style.top = `${rect.top}px`;
+          const offsetX = e.clientX - rect.left;
+          const offsetY = e.clientY - rect.top;
+          // pointer capture keeps the drag alive even over the PDF iframe
+          win.setPointerCapture(e.pointerId);
+          const move = (ev: PointerEvent) => {
+            const left = Math.max(48 - rect.width, Math.min(ev.clientX - offsetX, innerWidth - 48));
+            const top = Math.max(0, Math.min(ev.clientY - offsetY, innerHeight - 40));
+            win.style.left = `${left}px`;
+            win.style.top = `${top}px`;
+          };
+          const up = (ev: PointerEvent) => {
+            win.releasePointerCapture(ev.pointerId);
+            win.removeEventListener('pointermove', move);
+            win.removeEventListener('pointerup', up);
+          };
+          win.addEventListener('pointermove', move);
+          win.addEventListener('pointerup', up);
+        });
+      });
+
+      // in-window navigation: swap only the open window's contents and
+      // pushState the URL — no page re-render, window keeps its position.
+      // Direct loads and crawlers still get full SSR pages.
+      const cw = document.querySelector<HTMLElement>('.content-window');
+      if (cw) {
+        const swap = async (href: string, push: boolean) => {
+          try {
+            const res = await fetch(href);
+            if (!res.ok) throw new Error();
+            const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+            const next = doc.querySelector('.content-window');
+            if (!next) throw new Error();
+            cw.innerHTML = next.innerHTML;
+            cw.setAttribute('aria-label', next.getAttribute('aria-label') ?? '');
+            cw.hidden = false;
+            document.title = doc.title;
+            if (push) history.pushState({}, '', href);
+          } catch {
+            location.href = href; // fall back to a real navigation
+          }
+        };
+        cw.addEventListener('click', (e) => {
+          const a = (e.target as HTMLElement).closest('a');
+          if (!a || a.origin !== location.origin || !a.pathname.startsWith('/posts')) return;
+          e.preventDefault();
+          swap(a.href, true);
+        });
+        // closing hides the window and lands on the live desktop — no reload
+        const siteTitle = document.body.dataset.siteTitle ?? '';
+        cw.addEventListener('submit', (e) => {
+          e.preventDefault();
+          cw.hidden = true;
+          history.pushState({}, '', '/');
+          document.title = siteTitle;
+        });
+        addEventListener('popstate', () => {
+          if (location.pathname.startsWith('/posts')) swap(location.pathname, false);
+          else if (location.pathname === '/') {
+            cw.hidden = true;
+            document.title = siteTitle;
+          } else location.reload();
+        });
+      }
+    </script>
+  </body>
+</html>

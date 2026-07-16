@@ -1,0 +1,12 @@
+# Example stack for any homelab. On UnRAID, point the volume at
+# /mnt/user/appdata/portfolio/data and join your reverse-proxy network.
+services:
+  portfolio:
+    # or point at a published image, e.g. ghcr.io/<you>/portfolio:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - '4321:4321'
+    volumes:
+      - ./data:/data
+    env_file: .env

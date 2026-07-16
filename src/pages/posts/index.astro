@@ -1,0 +1,35 @@
+---
+import Desktop from '../../layouts/Desktop.astro';
+import { db } from '../../lib/db';
+import { SITE_TITLE } from '../../lib/site';
+
+type Post = { slug: string; title: string; summary: string; published_at: string };
+const posts = db
+  .prepare(
+    "SELECT slug, title, summary, published_at FROM posts WHERE status = 'published' ORDER BY published_at DESC"
+  )
+  .all() as Post[];
+---
+
+<Desktop title={`Lab Notes — ${SITE_TITLE}`} description="Lab notes and write-ups">
+  <div class="window content-window" role="dialog" aria-label="Lab Notes">
+    <div class="title-bar">
+      <div class="title-bar-text">Lab Notes</div>
+      <div class="title-bar-controls">
+        <form method="get" action="/"><button aria-label="Close"></button></form>
+      </div>
+    </div>
+    <div class="window-body content-body">
+      {posts.length === 0 && <p>Nothing here yet.</p>}
+      <ul class="post-list">
+        {posts.map((p) => (
+          <li>
+            <a href={`/posts/${p.slug}`}>{p.title}</a>
+            <time datetime={p.published_at}>{p.published_at.slice(0, 10)}</time>
+            {p.summary && <p>{p.summary}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</Desktop>

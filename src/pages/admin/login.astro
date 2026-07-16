@@ -1,0 +1,62 @@
+---
+import 'xp.css';
+import { createSession, rateLimited, verifyLogin } from '../../lib/auth';
+import { SITE_TITLE } from '../../lib/site';
+
+if (Astro.locals.user) return Astro.redirect('/admin');
+
+let error = '';
+if (Astro.request.method === 'POST') {
+  if (rateLimited(Astro.clientAddress)) {
+    error = 'Too many attempts. Try again later.';
+  } else {
+    const form = await Astro.request.formData();
+    const user = await verifyLogin(
+      String(form.get('email') ?? ''),
+      String(form.get('password') ?? '')
+    );
+    if (user) {
+      Astro.cookies.set('session', createSession(user.id), {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: import.meta.env.PROD,
+        path: '/',
+        maxAge: 30 * 86400,
+      });
+      return Astro.redirect('/admin');
+    }
+    error = 'Invalid email or password.';
+  }
+}
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Log On</title>
+  </head>
+  <body style="display: grid; place-items: center; min-height: 100vh; background: #3a6ea5; margin: 0">
+    <div class="window" style="width: min(320px, 90vw)">
+      <div class="title-bar">
+        <div class="title-bar-text">Log On to {SITE_TITLE}</div>
+      </div>
+      <div class="window-body">
+        <form method="post">
+          <div class="field-row-stacked">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required autocomplete="username" />
+          </div>
+          <div class="field-row-stacked">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required autocomplete="current-password" />
+          </div>
+          {error && <p role="alert">{error}</p>}
+          <section class="field-row" style="justify-content: flex-end">
+            <button type="submit">OK</button>
+          </section>
+        </form>
+      </div>
+    </div>
+  </body>
+</html>

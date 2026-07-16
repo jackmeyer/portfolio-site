@@ -1,0 +1,158 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+.desktop {
+  height: 100%;
+  /* Solid XP-blue placeholder until the Bliss-homage wallpaper lands. */
+  background: #3a6ea5;
+}
+
+/* Top-left column grid of icons, wrapping into further columns. */
+.icons {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 12px;
+  padding: 12px;
+  height: 100%;
+}
+
+.icon {
+  width: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  color: #fff;
+  text-align: center;
+  text-decoration: none;
+  text-shadow: 1px 1px 2px #000;
+  /* neutralize xp.css button chrome for icon buttons */
+  background: none;
+  border: 0;
+  box-shadow: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.icon-img {
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+/* external-link badge, bottom-right of the icon image */
+.external .icon-img::after {
+  content: '↗';
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 1px solid #808080;
+  border-radius: 2px;
+  color: #1941a5;
+  font: bold 12px/16px 'Pixelated MS Sans Serif', sans-serif;
+  text-align: center;
+  text-shadow: none;
+}
+
+.pdf-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 95vw);
+  height: min(85vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.pdf-window[hidden] {
+  display: none;
+}
+
+.pdf-window iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
+/* all desktop windows: native resize handle, draggable via title bar (JS) */
+.desktop .window {
+  resize: both;
+  overflow: hidden;
+  min-width: 280px;
+  min-height: 140px;
+}
+
+.desktop .title-bar {
+  touch-action: none; /* pointer-drag instead of scroll gestures */
+  user-select: none;
+  cursor: default;
+}
+
+/* server-rendered content window (Lab Notes index + posts) */
+.content-window {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(680px, 95vw);
+  /* ponytail: caps user resizing at 85vh; drop the cap (and give an explicit
+     initial height instead) if full-height windows are ever wanted */
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content-window .content-body {
+  overflow: auto;
+  background: #fff;
+  padding: 16px;
+}
+
+.post-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.post-list li {
+  margin-bottom: 12px;
+}
+
+.post-list time {
+  margin-left: 8px;
+  color: #666;
+}
+
+/* keep the close button a direct flex child of the title bar */
+.title-bar-controls form {
+  display: contents;
+}
+
+.taskbar {
+  position: fixed;
+  inset: auto 0 0 0;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(#245edb, #1941a5);
+}
+
+.taskbar .start-button {
+  height: 34px;
+  margin-left: 4px;
+  padding: 0 20px;
+  font-size: 15px;
+  font-weight: bold;
+}

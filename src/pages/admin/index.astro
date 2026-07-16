@@ -1,0 +1,302 @@
+---
+import 'xp.css';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { db } from '../../lib/db';
+
+type Link = {
+  id: number;
+  label: string;
+  icon_filename: string | null;
+  kind: string;
+  url: string;
+};
+
+const dataDir = process.env.DATA_DIR ?? 'data';
+const user = Astro.locals.user!;
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+
+  const action = form.get('action');
+  if (action === 'delete') {
+    // ponytail: deleting/replacing an icon leaves its old file in uploads/ (harmless
+    // orphans); sweep or delete-on-replace when a media manager exists
+    db.prepare('DELETE FROM links WHERE id = ?').run(Number(form.get('id')));
+    return Astro.redirect('/admin');
+  }
+  if (action === 'post-delete') {
+    db.prepare('DELETE FROM posts WHERE id = ?').run(Number(form.get('id')));
+    return Astro.redirect('/admin?tab=posts');
+  }
+  if (action === 'post-publish') {
+    db.prepare(
+      "UPDATE posts SET status = 'published', published_at = COALESCE(published_at, datetime('now')) WHERE id = ?"
+    ).run(Number(form.get('id')));
+    return Astro.redirect('/admin?tab=posts');
+  }
+  if (action === 'post-unpublish') {
+    db.prepare("UPDATE posts SET status = 'draft' WHERE id = ?").run(Number(form.get('id')));
+    return Astro.redirect('/admin?tab=posts');
+  }
+
+  const id = Number(form.get('id')) || null;
+  const label = String(form.get('label') ?? '').trim();
+  const url = String(form.get('url') ?? '').trim();
+  const icon = form.get('icon');
+  const pdf = form.get('pdf');
+  const hasPdf = pdf instanceof File && pdf.size > 0;
+
+  const saveUpload = (bytes: ArrayBuffer, name: string): string => {
+    mkdirSync(join(dataDir, 'uploads'), { recursive: true });
+    writeFileSync(join(dataDir, 'uploads', name), Buffer.from(bytes));
+    return name;
+  };
+
+  // keep the uploader's PDF filename, reduced to the safe charset the
+  // /uploads route serves ([\w.-], no path separators), deduped with -2, -3…
+  const safePdfName = (original: string): string => {
+    const base =
+      original
+        .replace(/\.pdf$/i, '')
+        .replace(/[^\w.-]+/g, '-')
+        .replace(/^[-.]+|[-.]+$/g, '')
+        .slice(0, 80) || 'document';
+    let name = `${base}.pdf`;
+    for (let n = 2; existsSync(join(dataDir, 'uploads', name)); n++) name = `${base}-${n}.pdf`;
+    return name;
+  };
+
+  if (!label) error = 'Name is required.';
+  else if (url && hasPdf) error = 'Provide a link or a PDF, not both.';
+  else if (!url && !hasPdf && !id) error = 'Provide a link or upload a PDF.';
+  else if (url) {
+    try {
+      new URL(url);
+    } catch {
+      error = 'Link must be a valid URL (including https://).';
+    }
+  }
+  if (!error && hasPdf) {
+    if (pdf.type !== 'application/pdf') error = 'Document must be a .pdf file.';
+    else if (pdf.size > 10_000_000) error = 'PDF must be under 10 MB.';
+  }
+
+  let iconFilename: string | null = null;
+  if (!error && icon instanceof File && icon.size > 0) {
+    if (icon.type !== 'image/png') error = 'Icon must be a .png file.';
+    else if (icon.size > 1_000_000) error = 'Icon must be under 1 MB.';
+    else iconFilename = saveUpload(await icon.arrayBuffer(), `${randomUUID()}.png`);
+  }
+  // no icon uploaded for a web link: fetch the site's favicon once at save time
+  // (Google's resolver chases link tags/ico formats; stored locally so the
+  // public desktop never calls out). Failure just means the default icon.
+  // ponytail: one-shot snapshot — a favicon that changes upstream stays stale
+  // until the icon is re-saved; add a refresh action if staleness ever bites
+  if (!error && !iconFilename && !id && url) {
+    try {
+      const res = await fetch(
+        `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=64`,
+        { signal: AbortSignal.timeout(5000) }
+      );
+      if (res.ok) iconFilename = saveUpload(await res.arrayBuffer(), `${randomUUID()}.png`);
+    } catch {
+      /* offline or blocked — icon stays null */
+    }
+  }
+
+  if (!error) {
+    const existing = id
+      ? (db.prepare('SELECT url FROM links WHERE id = ?').get(id) as { url: string } | undefined)
+      : undefined;
+    const finalUrl = hasPdf
+      ? `/uploads/${saveUpload(await pdf.arrayBuffer(), safePdfName(pdf.name))}`
+      : url || existing?.url || '';
+    // PDFs open in the in-desktop viewer; everything else is an external tab
+    const kind = /\.pdf(\?|#|$)/i.test(finalUrl) ? 'window' : 'external';
+    const windowType = kind === 'window' ? 'pdf' : null;
+    if (id) {
+      db.prepare(
+        'UPDATE links SET label = ?, url = ?, kind = ?, window_type = ?, icon_filename = COALESCE(?, icon_filename) WHERE id = ?'
+      ).run(label, finalUrl, kind, windowType, iconFilename, id);
+    } else {
+      db.prepare(
+        'INSERT INTO links (label, url, kind, window_type, icon_filename) VALUES (?, ?, ?, ?, ?)'
+      ).run(label, finalUrl, kind, windowType, iconFilename);
+    }
+    return Astro.redirect('/admin');
+  }
+}
+
+type Post = {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  published_at: string | null;
+  updated_at: string;
+};
+
+const tabParam = Astro.url.searchParams.get('tab');
+const tab = tabParam === 'posts' ? 'tab-posts' : tabParam === 'users' ? 'tab-users' : 'tab-icons';
+const posts = db
+  .prepare('SELECT id, title, slug, status, published_at, updated_at FROM posts ORDER BY updated_at DESC')
+  .all() as Post[];
+
+const editId = Number(Astro.url.searchParams.get('edit')) || null;
+const editing = editId
+  ? (db.prepare('SELECT * FROM links WHERE id = ?').get(editId) as Link | undefined)
+  : undefined;
+const links = db.prepare('SELECT * FROM links ORDER BY sort_order, id').all() as Link[];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin</title>
+  </head>
+  <body style="background: #3a6ea5; margin: 0; padding: 16px">
+    <div
+      class="window"
+      style="width: min(1200px, 96vw); margin: 0 auto; min-height: calc(95vh - 32px); display: flex; flex-direction: column"
+    >
+      <div class="title-bar">
+        <div class="title-bar-text">Administrator</div>
+      </div>
+      <div class="window-body" style="flex: 1; display: flex; flex-direction: column">
+        <menu role="tablist">
+          <button aria-selected={tab === 'tab-icons'} aria-controls="tab-icons">Desktop Icons</button>
+          <button aria-selected={tab === 'tab-posts'} aria-controls="tab-posts">Posts</button>
+          <button aria-selected={tab === 'tab-users'} aria-controls="tab-users">Users</button>
+        </menu>
+
+        <article role="tabpanel" id="tab-icons" hidden={tab !== 'tab-icons'}>
+          {links.length === 0 && <p>No desktop icons yet.</p>}
+          {links.length > 0 && (
+            <table style="width: 100%; margin-bottom: 12px">
+              <thead>
+                <tr><th></th><th style="text-align: left">Name</th><th style="text-align: left">Link</th><th></th></tr>
+              </thead>
+              <tbody>
+                {links.map((l) => (
+                  <tr>
+                    <td><img src={l.icon_filename ? `/uploads/${l.icon_filename}` : '/favicon.svg'} alt="" width="24" height="24" /></td>
+                    <td>{l.label}</td>
+                    <td style="word-break: break-all">{l.url} {l.kind === 'window' && <em>(PDF viewer)</em>}</td>
+                    <td style="white-space: nowrap">
+                      <a href={`/admin?edit=${l.id}`}>Edit</a>
+                      <form method="post" style="display: inline" onsubmit="return confirm('Delete this icon?')">
+                        <input type="hidden" name="action" value="delete" />
+                        <input type="hidden" name="id" value={l.id} />
+                        <button type="submit">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <fieldset>
+            <legend>{editing ? `Edit “${editing.label}”` : 'New icon'}</legend>
+            <form method="post" enctype="multipart/form-data">
+              {editing && <input type="hidden" name="id" value={editing.id} />}
+              <div class="field-row-stacked">
+                <label for="label">Name</label>
+                <input id="label" name="label" required value={editing?.label ?? ''} />
+              </div>
+              <div class="field-row-stacked">
+                <label for="url">Link (web address, or a .pdf URL for the built-in viewer)</label>
+                {/* uploaded PDFs store a relative /uploads path; leave the field empty so
+                    browser url-validation doesn't block saving other edits */}
+                <input id="url" name="url" type="url" value={editing?.url.startsWith('/') ? '' : (editing?.url ?? '')} />
+                {editing?.url.startsWith('/') && <small>Currently: uploaded PDF ({editing.url})</small>}
+              </div>
+              <div class="field-row-stacked">
+                <label for="pdf">…or upload a PDF (opens in the built-in viewer)</label>
+                <input id="pdf" name="pdf" type="file" accept="application/pdf" />
+              </div>
+              <div class="field-row-stacked">
+                <label for="icon">Icon (.png, optional — the site's favicon is used for links{editing ? '; leave empty to keep current' : ''})</label>
+                <input id="icon" name="icon" type="file" accept="image/png" />
+              </div>
+              {error && <p role="alert">{error}</p>}
+              <div class="field-row" style="justify-content: flex-end">
+                {editing && <a href="/admin">Cancel</a>}
+                <button type="submit">{editing ? 'Save' : 'Create'}</button>
+              </div>
+            </form>
+          </fieldset>
+        </article>
+
+        <article role="tabpanel" id="tab-posts" hidden={tab !== 'tab-posts'}>
+          <p><a href="/admin/post">New post</a></p>
+          {posts.length === 0 && <p>No posts yet.</p>}
+          {posts.length > 0 && (
+            <table style="width: 100%">
+              <thead>
+                <tr>
+                  <th style="text-align: left">Title</th>
+                  <th style="text-align: left">Slug</th>
+                  <th style="text-align: left">Status</th>
+                  <th style="text-align: left">Updated</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {posts.map((p) => (
+                  <tr>
+                    <td>{p.title}</td>
+                    <td>/posts/{p.slug}</td>
+                    <td>{p.status}{p.status === 'published' && p.published_at ? ` (${p.published_at.slice(0, 10)})` : ''}</td>
+                    <td>{p.updated_at.slice(0, 16)}</td>
+                    <td style="white-space: nowrap">
+                      <a href={`/admin/post?id=${p.id}`}>Edit</a>
+                      <form method="post" style="display: inline">
+                        <input type="hidden" name="action" value={p.status === 'published' ? 'post-unpublish' : 'post-publish'} />
+                        <input type="hidden" name="id" value={p.id} />
+                        <button type="submit">{p.status === 'published' ? 'Unpublish' : 'Publish'}</button>
+                      </form>
+                      <form method="post" style="display: inline" onsubmit="return confirm('Delete this post permanently?')">
+                        <input type="hidden" name="action" value="post-delete" />
+                        <input type="hidden" name="id" value={p.id} />
+                        <button type="submit">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </article>
+
+        <article role="tabpanel" id="tab-users" hidden={tab !== 'tab-users'}>
+          <p>User management lands here next.</p>
+        </article>
+
+        <div class="field-row" style="justify-content: space-between; margin-top: auto; padding-top: 12px">
+          <span>Signed in as {user.email}</span>
+          <form method="post" action="/admin/logout">
+            <button type="submit">Log Off</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.querySelectorAll('menu[role=tablist] button').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('menu[role=tablist] button').forEach((t) => {
+            t.setAttribute('aria-selected', String(t === tab));
+          });
+          document.querySelectorAll<HTMLElement>('[role=tabpanel]').forEach((p) => {
+            p.hidden = p.id !== tab.getAttribute('aria-controls');
+          });
+        });
+      });
+    </script>
+  </body>
+</html>
