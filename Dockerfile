@@ -15,7 +15,7 @@ COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
 USER node
 EXPOSE 4321
-# ponytail: migrations run on first db import (the healthcheck hits /healthz within 30s);
-# add a dedicated start script if start-time ordering ever matters.
+# ponytail: migrations run on first db import — the healthcheck hits /healthz
+# within 30s; add a start script if ordering ever matters.
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:4321/healthz || exit 1
 CMD ["node", "./dist/server/entry.mjs"]

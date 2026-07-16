@@ -100,8 +100,9 @@ contains a SQLite database and an `uploads/` directory.
 you're back to a fresh install.
 
 Database schema changes ship as numbered `.sql` files in `migrations/` and
-apply automatically when the app starts — updating is just pulling the new
-image or code and restarting.
+apply automatically on startup — updating is just pulling the new image or
+code and restarting. (Old migrations can be squashed into a single baseline
+file over time; see the note in `src/lib/db.ts`.)
 
 ## How it's built
 
