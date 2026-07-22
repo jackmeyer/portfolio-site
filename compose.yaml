@@ -13,6 +13,11 @@ services:
   portfolio:
     image: ghcr.io/jackmeyer/xp-desktop-portfolio:latest
     restart: unless-stopped
+    # The image's own user is uid 1000, which can't write a bind mount owned by
+    # anyone else — UnRAID's appdata is nobody:users (99:100), and a bind source
+    # Docker had to create for itself is root:root. Set these to whoever owns
+    # DATA_PATH; /data is the only thing the container ever writes to.
+    user: '${PUID:-1000}:${PGID:-1000}'
     ports:
       - '${PORT:-4321}:4321'
     volumes:
@@ -24,5 +29,8 @@ services:
       # so leaving these unset after the first login is the expected end state.
       ADMIN_EMAIL: '${ADMIN_EMAIL:-}'
       ADMIN_PASSWORD: '${ADMIN_PASSWORD:-}'
+      # Set to 'true' only when reaching the site over plain HTTP (a LAN box
+      # with no certificate). Behind a TLS-terminating proxy, leave it unset.
+      INSECURE_COOKIES: '${INSECURE_COOKIES:-}'
       # DATA_DIR is baked into the image as /data; override the host side with
       # DATA_PATH above, not this.

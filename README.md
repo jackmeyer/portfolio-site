@@ -86,11 +86,16 @@ Useful commands:
 
 ## Configuration
 
-All settings live in `.env` (copy `.env.example` to start). None of them are
-required after first boot except `DATA_DIR` defaults.
+Every setting is an environment variable with a working default. Set them on
+the `docker compose up` command line, or put them in a `.env` next to
+`compose.yaml` — the command line wins, the file is the fallback.
 
 | Variable | What it's for |
 | --- | --- |
+| `PORT` | Host port to publish on. Default `4321`. |
+| `DATA_PATH` | Host folder to store the database and uploads in. Default `./data`. Must start with `./` or `/`, otherwise Docker makes it a named volume. |
+| `INSECURE_COOKIES` | Set to `true` only if you reach the site over plain HTTP. Session cookies are `Secure` by default, and browsers discard those on HTTP — which makes login appear to do nothing. Leave unset behind a reverse proxy with a certificate. |
+| `PUID` / `PGID` | User and group the container runs as — must own `DATA_PATH`, or SQLite can't create its database. Default `1000`. On UnRAID use `99` / `100`. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Your admin login, seeded on first boot only. (To reset it, delete the database and boot fresh.) |
 | `PUBLIC_SITE_TITLE` | The site name shown in the browser tab and window chrome (e.g. `yourdomain.com`). |
 | `PUBLIC_SITE_URL` | Your site's public URL, used for links and previews. |
