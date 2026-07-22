@@ -2,7 +2,6 @@ import 'xp.css';
 import '../styles/desktop.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import MarkdownIt from 'markdown-it';
 import { db } from '../lib/db';
 import { SITE_TITLE, bioFontSize } from '../lib/site';
 import { WindowManagerProvider } from '../components/window-manager';
@@ -18,9 +17,6 @@ import { StartMenu } from '../components/start-menu';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: SITE_TITLE };
-
-// html stays off (default): raw HTML in the bio markdown is escaped
-const md = new MarkdownIt({ linkify: true });
 
 type Link = { id: number; label: string; icon_filename: string | null; kind: string; url: string };
 const iconSrc = (l: Link) =>
@@ -63,7 +59,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <StartMenu
               name={settings.bio_name || SITE_TITLE}
               photo={settings.bio_photo ? `/uploads/${settings.bio_photo}` : '/favicon.svg'}
-              html={md.render(settings.about ?? '')}
+              html={settings.about ?? ''} // sanitized on save
               fontSize={bioFontSize(settings.bio_font_size)}
             />
           </PostsUIProvider>

@@ -32,7 +32,7 @@ type NewDraft = Partial<Draft>;
 
 // TipTap is ~200 KB and only signed-in admins ever see it; keep it out of the
 // bundle every desktop visitor downloads (AdminArea lives in the root layout)
-const MarkdownEditor = dynamic(() => import('./markdown-editor').then((m) => m.MarkdownEditor), { ssr: false });
+const RichTextEditor = dynamic(() => import('./rich-text-editor').then((m) => m.RichTextEditor), { ssr: false });
 
 const ADMIN_ID = 'admin-window';
 const EDITOR_ID = 'editor-window';
@@ -530,7 +530,7 @@ function BioPanel({
           <label>Bio</label>
           {/* the writing surface is the preview: same text size the Start menu
               will use, so what you type is what the menu shows */}
-          <MarkdownEditor
+          <RichTextEditor
             name="about"
             ariaLabel="Bio"
             defaultValue={bio.about ?? ''}
@@ -591,10 +591,10 @@ function EditorWindow({
           </div>
           <div className="field-row-stacked">
             <label>Body</label>
-            <MarkdownEditor
-              name="body_md"
+            <RichTextEditor
+              name="body_html"
               ariaLabel="Post body"
-              defaultValue={draft.body_md ?? ''}
+              defaultValue={draft.body_html ?? ''}
               contentStyle={{ height: 400 }}
             />
           </div>

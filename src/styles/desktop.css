@@ -434,12 +434,12 @@ dialog.window .field-row button {
 /* --- Markdown WYSIWYG editor (TipTap) ---------------------------------
    A period rich-text control: raised toolbar strip of flat icon buttons
    with grooved separators, over a sunken white writing surface. */
-.md-editor {
+.rte-editor {
   border: 1px solid #7f9db9;
   background: #fff;
 }
 
-.md-toolbar {
+.rte-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -449,7 +449,7 @@ dialog.window .field-row button {
   border-bottom: 1px solid #aca899;
 }
 
-.md-toolbar-group {
+.rte-toolbar-group {
   display: flex;
   gap: 1px;
 }
@@ -459,17 +459,17 @@ dialog.window .field-row button {
    the first in each group down 6px, and the writing surface away from the
    toolbar. Undo it for the chrome; inside the prose, revert to the browser's
    own block margins so the editor spaces paragraphs like the Start menu. */
-.md-editor .md-toolbar * + *,
-.md-editor > .md-editor-content {
+.rte-editor .rte-toolbar * + *,
+.rte-editor > .rte-editor-content {
   margin-top: 0;
 }
 
-.md-editor .ProseMirror * + * {
+.rte-editor .ProseMirror * + * {
   margin-top: revert;
 }
 
 /* the grooved separator between button groups */
-.md-toolbar-group + .md-toolbar-group {
+.rte-toolbar-group + .rte-toolbar-group {
   margin-left: 3px;
   padding-left: 4px;
   border-left: 1px solid #aca899;
@@ -478,7 +478,7 @@ dialog.window .field-row button {
 
 /* every button is the same 24px square regardless of whether it holds a 16px
    icon or a letterform, so the strip reads as one row of even cells */
-.md-toolbar button {
+.rte-toolbar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -499,44 +499,44 @@ dialog.window .field-row button {
 
 /* <b>/<i>/<s> already carry their own weight, slant and strike; the italic
    just needs a serif to read as one at this size */
-.md-toolbar button i {
+.rte-toolbar button i {
   padding-right: 2px; /* the slant would otherwise sit off-centre */
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 14px;
 }
 
-.md-heading-label {
+.rte-heading-label {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.3px;
 }
 
-.md-toolbar button:hover:not(:disabled) {
+.rte-toolbar button:hover:not(:disabled) {
   border-color: #c2a04d;
   background: linear-gradient(#fff5cd, #ffdf94);
 }
 
 /* XP's "this format is on" state: the sunken amber highlight */
-.md-toolbar button[aria-pressed='true'] {
+.rte-toolbar button[aria-pressed='true'] {
   border-color: #c2a04d;
   background: linear-gradient(#ffd88a, #ffe9b8);
   box-shadow: inset 1px 1px 1px rgba(0, 0, 0, 0.2);
 }
 
-.md-toolbar button:disabled {
+.rte-toolbar button:disabled {
   color: #aca899;
   cursor: default;
 }
 
-.md-toolbar button:focus-visible {
+.rte-toolbar button:focus-visible {
   outline: 1px dotted #000;
 }
 
-.md-editor-content {
+.rte-editor-content {
   overflow: auto;
 }
 
-.md-editor-content .ProseMirror {
+.rte-editor-content .ProseMirror {
   min-height: 100%;
   padding: 8px 10px;
   outline: none;
@@ -544,24 +544,45 @@ dialog.window .field-row button {
 
 /* xp.css sizes h1 at 5rem for real XP dialogs; rendered markdown — start-menu
    bio, post bodies, and the editors that preview both — needs prose scale */
-.md-editor-content h1,
+.rte-editor-content h1,
 .start-menu-body h1,
 .content-body h1 {
   font-size: 1.8em;
 }
 
-.md-editor-content h2,
+.rte-editor-content h2,
 .start-menu-body h2,
 .content-body h2 {
   font-size: 1.4em;
 }
 
-.md-editor-content h3,
+.rte-editor-content h3,
 .start-menu-body h3,
 .content-body h3 {
   font-size: 1.2em;
 }
 
-.md-editor-content :first-child {
+.rte-editor-content :first-child {
   margin-top: 0;
+}
+
+/* TipTap wraps list item content in <p>; without this a re-saved list gains
+   paragraph margins and goes loose */
+.rte-editor-content li > p,
+.start-menu-body li > p,
+.content-body li > p {
+  margin: 0;
+}
+
+/* inline images: uploads are whatever size the camera made them */
+.rte-editor-content img,
+.start-menu-body img,
+.content-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ProseMirror marks the selected image node; show it the XP way */
+.rte-editor-content img.ProseMirror-selectednode {
+  outline: 2px solid #316ac5;
 }

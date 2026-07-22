@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cookies, headers } from 'next/headers';
-import MarkdownIt from 'markdown-it';
+import sanitizeHtml from 'sanitize-html';
 import {
   createSession,
   createUser,
@@ -260,9 +260,25 @@ export async function postUnpublish(formData: FormData): Promise<{ error?: strin
   return {};
 }
 
-// html stays off (default): raw HTML in markdown is escaped, so the rendered
-// output is safe without a separate sanitizer
-const md = new MarkdownIt({ linkify: true });
+// The editor stores HTML, so the server is the trust boundary: this allowlist
+// mirrors what the TipTap schema can produce. Anything else — script, event
+// handlers, styles beyond alignment — is dropped rather than escaped.
+const clean = (html: string): string =>
+  sanitizeHtml(html, {
+    allowedTags: [
+      'p', 'br', 'strong', 'em', 's', 'u', 'code', 'pre',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li', 'blockquote', 'hr', 'a', 'img',
+    ],
+    allowedAttributes: {
+      a: ['href', 'target', 'rel'],
+      img: ['src', 'alt', 'title', 'width'],
+      '*': ['style'],
+    },
+    allowedStyles: { '*': { 'text-align': [/^(left|right|center|justify)$/] } },
+    // relative /uploads/… srcs stay allowed; javascript: and data: do not
+    allowedSchemes: ['http', 'https', 'mailto'],
+  });
 
 export async function postSave(formData: FormData): Promise<{ id?: number; error?: string }> {
   if (!(await getUser())) return NOT_SIGNED_IN;
@@ -270,9 +286,9 @@ export async function postSave(formData: FormData): Promise<{ id?: number; error
   const title = String(formData.get('title') ?? '').trim();
   const summary = String(formData.get('summary') ?? '').trim();
   // absent (editor still loading) is not the same as empty — never blank a body
-  const body = formData.get('body_md');
+  const body = formData.get('body_html');
   if (body === null) return { error: 'Editor is still loading. Try again.' };
-  const bodyMd = String(body);
+  const bodyHtml = clean(String(body));
   const slug = (String(formData.get('slug') ?? '').trim() || title)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -281,17 +297,16 @@ export async function postSave(formData: FormData): Promise<{ id?: number; error
   if (!title) return { error: 'Title is required.' };
   if (!slug) return { error: 'Slug is required.' };
 
-  const bodyHtml = md.render(bodyMd);
   try {
     if (id) {
       db.prepare(
-        "UPDATE posts SET slug = ?, title = ?, summary = ?, body_md = ?, body_html = ?, updated_at = datetime('now') WHERE id = ?"
-      ).run(slug, title, summary, bodyMd, bodyHtml, id);
+        "UPDATE posts SET slug = ?, title = ?, summary = ?, body_html = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(slug, title, summary, bodyHtml, id);
     } else {
       id = Number(
         db
-          .prepare('INSERT INTO posts (slug, title, summary, body_md, body_html) VALUES (?, ?, ?, ?, ?)')
-          .run(slug, title, summary, bodyMd, bodyHtml).lastInsertRowid
+          .prepare('INSERT INTO posts (slug, title, summary, body_html) VALUES (?, ?, ?, ?)')
+          .run(slug, title, summary, bodyHtml).lastInsertRowid
       );
     }
   } catch (e) {
@@ -306,8 +321,8 @@ export async function postSave(formData: FormData): Promise<{ id?: number; error
 export async function postGetDraft(id: number) {
   if (!(await getUser())) return null;
   return (
-    (db.prepare('SELECT id, slug, title, summary, body_md, body_html, status FROM posts WHERE id = ?').get(id) as
-      | { id: number; slug: string; title: string; summary: string; body_md: string; body_html: string; status: string }
+    (db.prepare('SELECT id, slug, title, summary, body_html, status FROM posts WHERE id = ?').get(id) as
+      | { id: number; slug: string; title: string; summary: string; body_html: string; status: string }
       | undefined) ?? null
   );
 }
@@ -341,6 +356,27 @@ export async function userCreate(formData: FormData): Promise<{ error?: string }
   return {};
 }
 
+// --- inline images (post bodies and the bio) ---
+
+// Deliberately no SVG: it can carry script, and these are served from our own
+// origin. The editor inserts them as <img src="/uploads/…"> directly.
+const IMAGE_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+};
+
+export async function imageUpload(formData: FormData): Promise<{ url?: string; error?: string }> {
+  if (!(await getUser())) return NOT_SIGNED_IN;
+  const image = formData.get('image');
+  if (!(image instanceof File) || image.size === 0) return { error: 'No image selected.' };
+  const ext = IMAGE_EXT[image.type];
+  if (!ext) return { error: 'Image must be a .png, .jpg, .gif or .webp file.' };
+  if (image.size > 5_000_000) return { error: 'Image must be under 5 MB.' };
+  return { url: `/uploads/${saveUpload(await image.arrayBuffer(), `${randomUUID()}.${ext}`)}` };
+}
+
 // --- bio ---
 
 export async function bioSave(formData: FormData): Promise<{ error?: string }> {
@@ -358,7 +394,7 @@ export async function bioSave(formData: FormData): Promise<{ error?: string }> {
   upsert.run('bio_name', String(formData.get('bio_name') ?? '').trim());
   // absent (editor still loading) is not the same as empty — never blank the bio
   const about = formData.get('about');
-  if (about !== null) upsert.run('about', String(about));
+  if (about !== null) upsert.run('about', clean(String(about)));
   upsert.run('bio_font_size', String(bioFontSize(String(formData.get('bio_font_size') ?? ''))));
   return {};
 }
