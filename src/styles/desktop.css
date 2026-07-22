@@ -544,6 +544,17 @@ dialog.window .field-row button {
   outline: none;
 }
 
+/* xp.css sets body to 12px Arial: correct for window chrome, too small to read
+   a post in. Prose containers get a reading size while the desktop, taskbar and
+   dialogs keep the XP scale. The bio is exempt — it carries an inline size from
+   the admin's own slider, which wins over this. Headings below are em-based, so
+   they scale with it. */
+.content-body,
+.rte-editor-content {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
 /* xp.css sizes h1 at 5rem for real XP dialogs; rendered markdown — start-menu
    bio, post bodies, and the editors that preview both — needs prose scale */
 .rte-editor-content h1,
